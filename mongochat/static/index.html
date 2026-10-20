@@ -109,6 +109,18 @@
                 <symbol id="i-steps" viewBox="0 0 24 24">
                     <path d="M4 6h4M4 12h4M4 18h4M12 6h8M12 12h8M12 18h8" />
                 </symbol>
+                <symbol id="i-graph" viewBox="0 0 24 24">
+                    <circle cx="5" cy="6" r="2.5" />
+                    <circle cx="19" cy="6" r="2.5" />
+                    <circle cx="12" cy="18" r="2.5" />
+                    <path d="M7 7l10 0M6.5 8l4.5 8M17.5 8l-4.5 8" />
+                </symbol>
+                <symbol id="i-share" viewBox="0 0 24 24">
+                    <circle cx="18" cy="5" r="3" />
+                    <circle cx="6" cy="12" r="3" />
+                    <circle cx="18" cy="19" r="3" />
+                    <path d="M8.6 10.6l6.8-4M8.6 13.4l6.8 4" />
+                </symbol>
             </defs>
         </svg>
 
@@ -146,6 +158,16 @@
                     <div class="side-head">
                         <span class="eyebrow">Collections</span>
                         <div class="side-actions">
+                            <button
+                                id="graph-toggle"
+                                class="icon-btn-sq"
+                                title="Relationship graph"
+                                aria-label="Relationship graph"
+                            >
+                                <svg class="icon">
+                                    <use href="#i-graph" />
+                                </svg>
+                            </button>
                             <button
                                 id="refresh-index"
                                 class="icon-btn-sq"
@@ -387,6 +409,58 @@
         </div>
 
         <div id="drawer-scrim" hidden></div>
+
+        <!-- Relationship graph overlay -->
+        <div id="graph-overlay" class="graph-overlay" hidden>
+            <div class="graph-head">
+                <div class="graph-title">
+                    <svg class="icon"><use href="#i-share" /></svg>
+                    <span class="eyebrow">Collection relationships</span>
+                </div>
+                <div class="graph-actions">
+                    <span id="graph-stats" class="graph-stats"></span>
+                    <button
+                        id="graph-relayout"
+                        class="icon-btn-sq"
+                        title="Re-layout"
+                        aria-label="Re-layout graph"
+                    >
+                        <svg class="icon"><use href="#i-refresh" /></svg>
+                    </button>
+                    <button
+                        id="graph-close"
+                        class="icon-btn-sq"
+                        aria-label="Close graph"
+                    >
+                        <svg class="icon"><use href="#i-x" /></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="graph-body">
+                <svg
+                    id="graph-svg"
+                    class="graph-svg"
+                    xmlns="http://www.w3.org/2000/svg"
+                ></svg>
+                <div id="graph-detail" class="graph-detail" hidden>
+                    <div class="graph-detail-head">
+                        <span id="graph-detail-title" class="graph-detail-title"></span>
+                        <button
+                            id="graph-detail-close"
+                            class="icon-btn-sq"
+                            aria-label="Close details"
+                        >
+                            <svg class="icon"><use href="#i-x" /></svg>
+                        </button>
+                    </div>
+                    <div id="graph-detail-body" class="graph-detail-body"></div>
+                </div>
+                <div id="graph-empty" class="graph-empty" hidden>
+                    <svg class="icon graph-empty-icon"><use href="#i-share" /></svg>
+                    <p>No collections to graph. Connect to a database first.</p>
+                </div>
+            </div>
+        </div>
 
         <div id="toast" class="toast" role="status" aria-live="polite">
             <span id="toast-icon" class="toast-icon"></span>

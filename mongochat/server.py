@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, SecretStr
 
 from mongochat.config import Config, redact_uri_safe, require_uri_db
 from mongochat.core.agent import set_debug
+from mongochat.core.relations import infer_relations
 from mongochat.core.session import Session
 from mongochat.types import (
     AgentResult,
@@ -260,6 +261,17 @@ def create_app(config: Config) -> FastAPI:
         if isinstance(session, JSONResponse):
             return session
         return session.index.model_dump(mode="json")
+
+    @app.get("/api/graph/{session_id}", dependencies=[Depends(auth)], response_model=None)
+    async def get_graph(session_id: str) -> dict[str, Any] | JSONResponse:
+        """Schema index plus inferred relationships, for the explorer graph."""
+        session = _get(session_id)
+        if isinstance(session, JSONResponse):
+            return session
+        return {
+            "index": session.index.model_dump(mode="json"),
+            "relations": [r.model_dump() for r in infer_relations(session.index)],
+        }
 
     @app.post("/api/schema/{session_id}/refresh", dependencies=[Depends(auth)], response_model=None)
     async def refresh_schema(session_id: str) -> dict[str, Any] | JSONResponse:

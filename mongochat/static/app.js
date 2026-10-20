@@ -614,6 +614,7 @@ async function createSession(creds) {
   closeModal();
   await loadSchema();
   $("#side-idle").hidden = true;
+  if (!graphOverlay.hidden) loadGraph();
   showToast("Connected to " + data.database, "ok");
 }
 
@@ -663,6 +664,7 @@ $("#refresh-index").addEventListener("click", async () => {
       headers: keyHeaders(),
     });
     await loadSchema();
+    if (!graphOverlay.hidden) loadGraph();
     showToast("Index refreshed", "ok");
   } catch (err) {
     showToast(err.message);
@@ -695,6 +697,576 @@ $("#reset-index").addEventListener("click", async () => {
 });
 
 /* ------------------------------------------------------------------ */
+/* Graph explorer                                                      */
+/* ------------------------------------------------------------------ */
+
+const graph = {
+  nodes: [],
+  edges: [],
+  rafId: null,
+  alpha: 0,
+  dragging: null,
+  justDragged: false,
+  width: 0,
+  height: 0,
+};
+
+const graphOverlay = $("#graph-overlay");
+const graphSvg = $("#graph-svg");
+
+function openGraph() {
+  if (!state.sessionId) {
+    showToast("Connect to a database first.");
+    return;
+  }
+  graphOverlay.removeAttribute("hidden");
+  graphOverlay.style.display = "flex";
+  $("#graph-stats").textContent = "Loading…";
+  requestAnimationFrame(() => {
+    const body = graphOverlay.querySelector(".graph-body");
+    graph.width = body.clientWidth;
+    graph.height = body.clientHeight;
+    loadGraph();
+  });
+}
+
+function closeGraph() {
+  graphOverlay.setAttribute("hidden", "");
+  graphOverlay.style.display = "";
+  stopSimulation();
+  graphSvg.textContent = "";
+  hideDetail();
+  graph.nodes = [];
+  graph.edges = [];
+  graph.alpha = 0;
+}
+
+async function loadGraph() {
+  try {
+    const data = await api("/api/graph/" + encodeURIComponent(state.sessionId), {
+      headers: keyHeaders(),
+    });
+    buildGraph(data);
+  } catch (err) {
+    closeGraph();
+    showToast("Graph error: " + err.message);
+  }
+}
+
+function buildGraph(data) {
+  const collections = (data.index && data.index.collections) || [];
+  const relations = data.relations || [];
+
+  graph.nodes = collections.map((c) => ({
+    name: c.name,
+    docCount: c.document_count,
+    avgSize: c.avg_doc_size || 0,
+    attributes: c.attributes || [],
+    x: 0, y: 0, vx: 0, vy: 0, fx: null, fy: null,
+    width: 0, height: 40,
+    element: null,
+  }));
+
+  const nodeMap = new Map(graph.nodes.map((n, i) => [n.name, i]));
+  graph.edges = relations
+    .map((r) => {
+      const si = nodeMap.get(r.source_collection);
+      const ti = nodeMap.get(r.target_collection);
+      if (si === undefined || ti === undefined) return null;
+      return {
+        source: si,
+        target: ti,
+        sourceField: r.source_field,
+        targetField: r.target_field,
+        confidence: r.confidence,
+        selfRef: r.self_reference,
+        element: null,
+      };
+    })
+    .filter(Boolean);
+
+  $("#graph-stats").textContent =
+    graph.nodes.length + " coll · " + graph.edges.length + " rel";
+  $("#graph-empty").hidden = graph.nodes.length > 0;
+
+  if (graph.nodes.length === 0) {
+    graphSvg.textContent = "";
+    return;
+  }
+
+  // If graph loaded but no edges, show a hint
+  if (graph.edges.length === 0) {
+    $("#graph-stats").textContent =
+      graph.nodes.length + " coll · no inferred relations (try refreshing the schema index)";
+  }
+
+  graph.nodes.forEach((n) => {
+    n.width = Math.max(110, n.name.length * 7.5 + 44);
+  });
+
+  var cx = graph.width / 2;
+  var cy = graph.height / 2;
+  var radius = Math.min(graph.width, graph.height) * 0.32;
+  graph.nodes.forEach((n, i) => {
+    var a = (i / graph.nodes.length) * Math.PI * 2;
+    n.x = cx + radius * Math.cos(a) + (Math.random() - 0.5) * 12;
+    n.y = cy + radius * Math.sin(a) + (Math.random() - 0.5) * 12;
+    n.vx = 0;
+    n.vy = 0;
+  });
+
+  createGraphElements();
+  graph.alpha = 1;
+  startSimulation();
+}
+
+function createMarker(id, color) {
+  var marker = document.createElementNS(SVG_NS, "marker");
+  marker.setAttribute("id", id);
+  marker.setAttribute("viewBox", "0 0 10 10");
+  marker.setAttribute("refX", "8");
+  marker.setAttribute("refY", "5");
+  marker.setAttribute("markerWidth", "7");
+  marker.setAttribute("markerHeight", "7");
+  marker.setAttribute("orient", "auto");
+  var arrow = document.createElementNS(SVG_NS, "path");
+  arrow.setAttribute("d", "M0,1 L9,5 L0,9 Z");
+  arrow.setAttribute("fill", color);
+  marker.appendChild(arrow);
+  return marker;
+}
+
+function createGraphElements() {
+  var svg = graphSvg;
+  svg.textContent = "";
+  svg.setAttribute("width", graph.width);
+  svg.setAttribute("height", graph.height);
+
+  var defs = document.createElementNS(SVG_NS, "defs");
+  defs.appendChild(createMarker("graph-arrow", "var(--muted)"));
+  defs.appendChild(createMarker("graph-arrow-hi", "var(--text-2)"));
+  defs.appendChild(createMarker("graph-arrow-sel", "var(--accent)"));
+  svg.appendChild(defs);
+
+  var bg = document.createElementNS(SVG_NS, "rect");
+  bg.setAttribute("width", graph.width);
+  bg.setAttribute("height", graph.height);
+  bg.setAttribute("fill", "transparent");
+  bg.addEventListener("click", hideDetail);
+  svg.appendChild(bg);
+
+  var edgeLayer = document.createElementNS(SVG_NS, "g");
+  edgeLayer.setAttribute("class", "graph-edges");
+  graph.edges.forEach(function (e) {
+    var path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute(
+      "class",
+      "graph-edge conf-" + e.confidence + (e.selfRef ? " self-ref" : "")
+    );
+    path.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      showEdgeDetail(e);
+    });
+    e.element = path;
+    edgeLayer.appendChild(path);
+  });
+  svg.appendChild(edgeLayer);
+
+  var nodeLayer = document.createElementNS(SVG_NS, "g");
+  nodeLayer.setAttribute("class", "graph-nodes");
+  graph.nodes.forEach(function (n) {
+    var g = document.createElementNS(SVG_NS, "g");
+    g.setAttribute("class", "graph-node");
+    g.dataset.name = n.name;
+
+    var rect = document.createElementNS(SVG_NS, "rect");
+    rect.setAttribute("width", n.width);
+    rect.setAttribute("height", n.height);
+    rect.setAttribute("rx", 8);
+    g.appendChild(rect);
+
+    var label = document.createElementNS(SVG_NS, "text");
+    label.setAttribute("x", n.width / 2);
+    label.setAttribute("y", n.height / 2 - 4);
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("dominant-baseline", "central");
+    label.setAttribute("class", "graph-node-label");
+    label.textContent = n.name;
+    g.appendChild(label);
+
+    var count = document.createElementNS(SVG_NS, "text");
+    count.setAttribute("x", n.width / 2);
+    count.setAttribute("y", n.height / 2 + 12);
+    count.setAttribute("text-anchor", "middle");
+    count.setAttribute("dominant-baseline", "central");
+    count.setAttribute("class", "graph-node-count");
+    count.textContent = formatCount(n.docCount);
+    g.appendChild(count);
+
+    g.addEventListener("pointerdown", function (ev) {
+      startDrag(ev, n);
+    });
+    g.addEventListener("click", function () {
+      if (graph.justDragged) {
+        graph.justDragged = false;
+        return;
+      }
+      showNodeDetail(n);
+    });
+
+    n.element = g;
+    nodeLayer.appendChild(g);
+  });
+  svg.appendChild(nodeLayer);
+}
+
+/* Simulation */
+
+function startSimulation() {
+  stopSimulation();
+  function frame() {
+    if (graphOverlay.hasAttribute("hidden")) return;
+    if (graph.alpha > 0.005) {
+      tickSimulation();
+      graph.alpha *= 0.985;
+    }
+    updatePositions();
+    if (graph.alpha > 0.005 || graph.dragging) {
+      graph.rafId = requestAnimationFrame(frame);
+    }
+  }
+  graph.rafId = requestAnimationFrame(frame);
+}
+
+function stopSimulation() {
+  if (graph.rafId) cancelAnimationFrame(graph.rafId);
+  graph.rafId = null;
+}
+
+function tickSimulation() {
+  var nodes = graph.nodes;
+  var edges = graph.edges;
+  var a = graph.alpha;
+
+  for (var i = 0; i < nodes.length; i++) {
+    for (var j = i + 1; j < nodes.length; j++) {
+      var dx = nodes[j].x - nodes[i].x;
+      var dy = nodes[j].y - nodes[i].y;
+      var d2 = dx * dx + dy * dy;
+      if (d2 < 1) d2 = 1;
+      var d = Math.sqrt(d2);
+      var f = (14000 / d2) * a;
+      var fx = (dx / d) * f;
+      var fy = (dy / d) * f;
+      nodes[i].vx -= fx;
+      nodes[i].vy -= fy;
+      nodes[j].vx += fx;
+      nodes[j].vy += fy;
+    }
+  }
+
+  edges.forEach(function (e) {
+    if (e.selfRef) return;
+    var s = nodes[e.source];
+    var t = nodes[e.target];
+    var dx = t.x - s.x;
+    var dy = t.y - s.y;
+    var d = Math.sqrt(dx * dx + dy * dy) || 1;
+    var f = (d - 150) * 0.05 * a;
+    var fx = (dx / d) * f;
+    var fy = (dy / d) * f;
+    s.vx += fx;
+    s.vy += fy;
+    t.vx -= fx;
+    t.vy -= fy;
+  });
+
+  var cx = graph.width / 2;
+  var cy = graph.height / 2;
+  nodes.forEach(function (n) {
+    if (n.fx !== null) {
+      n.x = n.fx;
+      n.vx = 0;
+    } else {
+      n.vx += (cx - n.x) * 0.015 * a;
+      n.x += n.vx;
+      n.vx *= 0.82;
+    }
+    if (n.fy !== null) {
+      n.y = n.fy;
+      n.vy = 0;
+    } else {
+      n.vy += (cy - n.y) * 0.015 * a;
+      n.y += n.vy;
+      n.vy *= 0.82;
+    }
+    n.x = Math.max(n.width / 2 + 8, Math.min(graph.width - n.width / 2 - 8, n.x));
+    n.y = Math.max(n.height / 2 + 8, Math.min(graph.height - n.height / 2 - 8, n.y));
+  });
+}
+
+function rectEdgePoint(node, tx, ty) {
+  var dx = tx - node.x;
+  var dy = ty - node.y;
+  var hw = node.width / 2;
+  var hh = node.height / 2;
+  if (dx === 0 && dy === 0) return { x: node.x, y: node.y };
+  var s = Math.min(hw / Math.abs(dx), hh / Math.abs(dy));
+  return { x: node.x + dx * s, y: node.y + dy * s };
+}
+
+function updatePositions() {
+  graph.edges.forEach(function (e) {
+    var s = graph.nodes[e.source];
+    var t = graph.nodes[e.target];
+    if (e.selfRef) {
+      var top = s.y - s.height / 2;
+      var cx = s.x;
+      e.element.setAttribute(
+        "d",
+        "M " + (cx - 8) + "," + top + " C " + (cx - 36) + "," + (top - 44) + " " + (cx + 36) + "," + (top - 44) + " " + (cx + 8) + "," + top
+      );
+    } else {
+      var sp = rectEdgePoint(s, t.x, t.y);
+      var tp = rectEdgePoint(t, s.x, s.y);
+      var dx = tp.x - sp.x;
+      var dy = tp.y - sp.y;
+      var d = Math.sqrt(dx * dx + dy * dy) || 1;
+      tp.x -= (dx / d) * 10;
+      tp.y -= (dy / d) * 10;
+      e.element.setAttribute("d", "M " + sp.x + "," + sp.y + " L " + tp.x + "," + tp.y);
+    }
+  });
+  graph.nodes.forEach(function (n) {
+    n.element.setAttribute(
+      "transform",
+      "translate(" + (n.x - n.width / 2) + ", " + (n.y - n.height / 2) + ")"
+    );
+  });
+}
+
+/* Drag */
+
+function startDrag(ev, node) {
+  ev.preventDefault();
+  var rect = graphSvg.getBoundingClientRect();
+  graph.dragging = {
+    node: node,
+    offsetX: ev.clientX - rect.left - node.x,
+    offsetY: ev.clientY - rect.top - node.y,
+    moved: false,
+  };
+  node.fx = node.x;
+  node.fy = node.y;
+  graph.alpha = Math.max(graph.alpha, 0.3);
+  startSimulation();
+}
+
+function onDragMove(ev) {
+  if (!graph.dragging) return;
+  var rect = graphSvg.getBoundingClientRect();
+  var n = graph.dragging.node;
+  n.fx = ev.clientX - rect.left - graph.dragging.offsetX;
+  n.fy = ev.clientY - rect.top - graph.dragging.offsetY;
+  graph.dragging.moved = true;
+}
+
+function onDragEnd() {
+  if (!graph.dragging) return;
+  graph.dragging.node.fx = null;
+  graph.dragging.node.fy = null;
+  if (graph.dragging.moved) graph.justDragged = true;
+  graph.dragging = null;
+}
+
+window.addEventListener("pointermove", onDragMove);
+window.addEventListener("pointerup", onDragEnd);
+
+/* Detail panel */
+
+function confidenceLabel(c) {
+  return (
+    { exact: "Exact", singular_plural: "Singular↔plural", bare: "Name match" }[c] || c
+  );
+}
+
+function detailStat(label, value) {
+  var row = el("div", "detail-stat");
+  row.append(
+    el("span", "detail-label", label),
+    el("span", "detail-value", value)
+  );
+  return row;
+}
+
+function detailSection(title, items) {
+  var sec = el("div", "detail-section");
+  sec.appendChild(el("h4", null, title));
+  var list = el("div", "detail-list");
+  items.forEach(function (item) {
+    list.appendChild(item);
+  });
+  sec.appendChild(list);
+  return sec;
+}
+
+function clearSelection() {
+  graph.nodes.forEach(function (n) {
+    if (n.element) n.element.classList.remove("selected");
+  });
+  graph.edges.forEach(function (e) {
+    if (e.element) e.element.classList.remove("selected", "highlighted");
+  });
+}
+
+function showNodeDetail(node) {
+  clearSelection();
+  node.element.classList.add("selected");
+  graph.edges.forEach(function (e) {
+    if (graph.nodes[e.source] === node || graph.nodes[e.target] === node) {
+      e.element.classList.add("highlighted");
+    }
+  });
+
+  var body = $("#graph-detail-body");
+  body.textContent = "";
+  $("#graph-detail-title").textContent = node.name;
+
+  var stats = el("div", "detail-stats");
+  stats.append(
+    detailStat("Documents", compactNumber.format(node.docCount)),
+    detailStat("Avg size", node.avgSize ? node.avgSize + " B" : "—"),
+    detailStat("Fields", String(node.attributes.length))
+  );
+  body.appendChild(stats);
+
+  if (node.attributes.length) {
+    body.appendChild(
+      detailSection(
+        "Fields",
+        node.attributes.slice(0, 30).map(function (a) {
+          var row = el("div", "detail-field-row");
+          row.append(
+            el("span", "detail-field-name", a.path),
+            el("span", "type-chip", (a.types || []).join(" | "))
+          );
+          return row;
+        })
+      )
+    );
+  }
+
+  var outgoing = graph.edges.filter(function (e) {
+    return graph.nodes[e.source] === node;
+  });
+  if (outgoing.length) {
+    body.appendChild(
+      detailSection(
+        "References",
+        outgoing.map(function (e) {
+          var target = graph.nodes[e.target];
+          return el(
+            "div",
+            "detail-rel-row",
+            e.sourceField + " → " + target.name + (e.selfRef ? " (self)" : "")
+          );
+        })
+      )
+    );
+  }
+
+  var incoming = graph.edges.filter(function (e) {
+    return graph.nodes[e.target] === node && !e.selfRef;
+  });
+  if (incoming.length) {
+    body.appendChild(
+      detailSection(
+        "Referenced by",
+        incoming.map(function (e) {
+          var source = graph.nodes[e.source];
+          return el("div", "detail-rel-row", source.name + "." + e.sourceField);
+        })
+      )
+    );
+  }
+
+  $("#graph-detail").hidden = false;
+}
+
+function showEdgeDetail(edge) {
+  clearSelection();
+  edge.element.classList.add("selected");
+  var source = graph.nodes[edge.source];
+  var target = graph.nodes[edge.target];
+
+  var body = $("#graph-detail-body");
+  body.textContent = "";
+  $("#graph-detail-title").textContent =
+    source.name + " → " + target.name;
+
+  var stats = el("div", "detail-stats");
+  stats.append(
+    detailStat("Source field", edge.sourceField),
+    detailStat("Target field", edge.targetField),
+    detailStat("Confidence", confidenceLabel(edge.confidence)),
+    detailStat("Self-reference", edge.selfRef ? "Yes" : "No")
+  );
+  body.appendChild(stats);
+
+  $("#graph-detail").hidden = false;
+}
+
+function hideDetail() {
+  $("#graph-detail").hidden = true;
+  clearSelection();
+}
+
+/* Graph event handlers */
+
+$("#graph-toggle").addEventListener("click", function () {
+  if (!graphOverlay.hidden) closeGraph();
+  else openGraph();
+});
+
+$("#graph-close").addEventListener("click", closeGraph);
+$("#graph-detail-close").addEventListener("click", hideDetail);
+
+$("#graph-relayout").addEventListener("click", function () {
+  if (graph.nodes.length === 0) return;
+  graph.nodes.forEach(function (n) {
+    n.fx = null;
+    n.fy = null;
+  });
+  var cx = graph.width / 2;
+  var cy = graph.height / 2;
+  var radius = Math.min(graph.width, graph.height) * 0.32;
+  graph.nodes.forEach(function (n, i) {
+    var a = (i / graph.nodes.length) * Math.PI * 2;
+    n.x = cx + radius * Math.cos(a) + (Math.random() - 0.5) * 20;
+    n.y = cy + radius * Math.sin(a) + (Math.random() - 0.5) * 20;
+    n.vx = 0;
+    n.vy = 0;
+  });
+  graph.alpha = 1;
+  startSimulation();
+});
+
+var graphResizeTimer = null;
+window.addEventListener("resize", function () {
+  if (graphOverlay.hidden) return;
+  clearTimeout(graphResizeTimer);
+  graphResizeTimer = setTimeout(function () {
+    var body = graphOverlay.querySelector(".graph-body");
+    graph.width = body.clientWidth;
+    graph.height = body.clientHeight;
+    graphSvg.setAttribute("width", graph.width);
+    graphSvg.setAttribute("height", graph.height);
+    graph.alpha = Math.max(graph.alpha, 0.3);
+    startSimulation();
+  }, 200);
+});
+
+/* ------------------------------------------------------------------ */
 /* Drawer (mobile)                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -721,7 +1293,10 @@ $("#drawer-scrim").addEventListener("click", closeDrawer);
 document.addEventListener("keydown", (event) => {
   const typing = event.target instanceof HTMLElement && /INPUT|TEXTAREA/.test(event.target.tagName);
   if (event.key === "Escape") {
-    if (!backdrop.hidden && state.sessionId) closeModal();
+    if (!graphOverlay.hidden) {
+      if (!$("#graph-detail").hidden) hideDetail();
+      else closeGraph();
+    } else if (!backdrop.hidden && state.sessionId) closeModal();
     else closeDrawer();
   }
   if (event.key === "/" && !typing && backdrop.hidden) {
