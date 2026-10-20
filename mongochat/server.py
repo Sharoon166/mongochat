@@ -27,6 +27,7 @@ from mongochat.types import (
     LLMConfig,
     MongoChatError,
 )
+from scalar_fastapi import add_scalar_reference
 
 logger = logging.getLogger("mongochat.server")
 
@@ -140,9 +141,11 @@ def create_app(config: Config) -> FastAPI:
         title="mongochat",
         version="0.1.0",
         lifespan=lifespan,
-        docs_url="/docs",
+        docs_url=None,
         redoc_url=None,
     )
+
+    add_scalar_reference(app, route="/docs")
     app.state.config = config
 
     @app.exception_handler(MongoChatError)
