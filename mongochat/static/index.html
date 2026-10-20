@@ -1,96 +1,398 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>mongochat</title>
-<link rel="stylesheet" href="/static/app.css" />
-<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-</head>
-<body>
-  <div id="app">
-    <header id="topbar">
-      <button id="drawer-toggle" class="icon-btn" aria-label="Toggle collections" title="Collections">☰</button>
-      <h1>mongochat</h1>
-      <span id="db-badge" class="badge">no connection</span>
-      <span id="typing" class="typing" hidden>
-        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-        <span id="typing-tool" class="typing-tool"></span>
-      </span>
-      <span class="spacer"></span>
-      <button id="new-session" class="btn">Connect</button>
-    </header>
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1, viewport-fit=cover"
+        />
+        <meta name="color-scheme" content="dark" />
+        <title>mongochat</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Hanken+Grotesk:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="/static/app.css" />
+        <link rel="icon" href="/static/logo.jpg" />
+        <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+    </head>
+    <body>
+        <!-- Icon sprite (Lucide-style strokes). Referenced with <use href="#i-name">. -->
+        <svg class="sprite" aria-hidden="true" focusable="false">
+            <defs>
+                <symbol id="i-leaf" viewBox="0 0 24 24">
+                    <path
+                        d="M12 3c4 3.5 6 7 6 10.5A6 6 0 0 1 6 13.5C6 10 8 6.5 12 3z"
+                    />
+                    <path d="M12 21v-7" />
+                </symbol>
+                <symbol id="i-database" viewBox="0 0 24 24">
+                    <ellipse cx="12" cy="5" rx="8" ry="3" />
+                    <path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
+                    <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
+                </symbol>
+                <symbol id="i-send" viewBox="0 0 24 24">
+                    <path d="M5 12h13" />
+                    <path d="M13 6l6 6-6 6" />
+                </symbol>
+                <symbol id="i-plus" viewBox="0 0 24 24">
+                    <path d="M12 5v14M5 12h14" />
+                </symbol>
+                <symbol id="i-refresh" viewBox="0 0 24 24">
+                    <path d="M20 11a8 8 0 1 0-2.3 5.7" />
+                    <path d="M20 4v7h-7" />
+                </symbol>
+                <symbol id="i-trash" viewBox="0 0 24 24">
+                    <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
+                </symbol>
+                <symbol id="i-panel" viewBox="0 0 24 24">
+                    <rect x="3" y="4" width="18" height="16" rx="2" />
+                    <path d="M9 4v16" />
+                </symbol>
+                <symbol id="i-chevron" viewBox="0 0 24 24">
+                    <path d="M9 6l6 6-6 6" />
+                </symbol>
+                <symbol id="i-copy" viewBox="0 0 24 24">
+                    <rect x="9" y="9" width="11" height="11" rx="2" />
+                    <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+                </symbol>
+                <symbol id="i-check" viewBox="0 0 24 24">
+                    <path d="M5 12l5 5L20 7" />
+                </symbol>
+                <symbol id="i-alert" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 8v5M12 16h.01" />
+                </symbol>
+                <symbol id="i-x" viewBox="0 0 24 24">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                </symbol>
+                <symbol id="i-table" viewBox="0 0 24 24">
+                    <rect x="3" y="4" width="18" height="16" rx="2" />
+                    <path d="M3 10h18M9 4v16" />
+                </symbol>
+                <symbol id="i-key" viewBox="0 0 24 24">
+                    <circle cx="8" cy="15" r="4" />
+                    <path d="M11 12l9-9M17 6l3 3M14 9l2 2" />
+                </symbol>
+                <symbol id="i-link" viewBox="0 0 24 24">
+                    <path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
+                    <path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
+                </symbol>
+                <symbol id="i-cpu" viewBox="0 0 24 24">
+                    <rect x="6" y="6" width="12" height="12" rx="2" />
+                    <path
+                        d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"
+                    />
+                </symbol>
+                <symbol id="i-globe" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="9" />
+                    <path
+                        d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"
+                    />
+                </symbol>
+                <symbol id="i-shield" viewBox="0 0 24 24">
+                    <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" />
+                </symbol>
+                <symbol id="i-plug" viewBox="0 0 24 24">
+                    <path d="M9 2v6M15 2v6" />
+                    <path d="M7 8h10v4a5 5 0 0 1-10 0z" />
+                    <path d="M12 17v5" />
+                </symbol>
+                <symbol id="i-sparkle" viewBox="0 0 24 24">
+                    <path
+                        d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"
+                    />
+                </symbol>
+                <symbol id="i-steps" viewBox="0 0 24 24">
+                    <path d="M4 6h4M4 12h4M4 18h4M12 6h8M12 12h8M12 18h8" />
+                </symbol>
+            </defs>
+        </svg>
 
-    <div id="layout">
-      <aside id="sidebar">
-        <div class="side-head">
-          <strong>Collections</strong>
-          <div class="side-actions">
-            <button id="refresh-index" class="btn small">Refresh index</button>
-            <button id="reset-index" class="btn small danger">Reset index</button>
-          </div>
+        <div id="app">
+            <header id="topbar">
+                <button
+                    id="drawer-toggle"
+                    class="icon-btn-sq"
+                    aria-label="Show collections"
+                    title="Collections"
+                >
+                    <svg class="icon"><use href="#i-panel" /></svg>
+                </button>
+                <div class="brand">
+                    <img class="brand-logo" src="/static/logo.jpg" alt="" />
+                    <span class="brand-name">mongochat</span>
+                </div>
+                <span class="crumb" aria-hidden="true">/</span>
+                <span id="db-badge" class="crumb-db">not connected</span>
+                <span class="spacer"></span>
+                <span id="status" class="status" data-state="idle">
+                    <span class="status-dot"></span
+                    ><span id="status-text" class="status-text"
+                        >Not connected</span
+                    >
+                </span>
+                <button id="new-session" class="btn ghost">
+                    <svg class="icon"><use href="#i-plug" /></svg
+                    ><span class="btn-label">Connect</span>
+                </button>
+            </header>
+
+            <div id="layout">
+                <aside id="sidebar" aria-label="Collections">
+                    <div class="side-head">
+                        <span class="eyebrow">Collections</span>
+                        <div class="side-actions">
+                            <button
+                                id="refresh-index"
+                                class="icon-btn-sq"
+                                title="Refresh index"
+                                aria-label="Refresh index"
+                            >
+                                <svg class="icon">
+                                    <use href="#i-refresh" />
+                                </svg>
+                            </button>
+                            <button
+                                id="reset-index"
+                                class="icon-btn-sq danger"
+                                title="Reset index"
+                                aria-label="Reset index"
+                            >
+                                <svg class="icon"><use href="#i-trash" /></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <p id="side-idle" class="empty-note">
+                        Connect to browse collections and fields.
+                    </p>
+                    <div id="collection-list"></div>
+                    <p id="empty-collections" class="empty-note" hidden>
+                        No collections in this database.
+                    </p>
+                    <div class="side-foot">
+                        <svg class="icon"><use href="#i-shield" /></svg>
+                        <span
+                            >Read-only. Queries are validated before they
+                            run.</span
+                        >
+                    </div>
+                </aside>
+
+                <main id="thread">
+                    <div id="messages" role="log" aria-live="polite">
+                        <section class="welcome" id="welcome">
+                            <img
+                                class="welcome-logo"
+                                src="/static/logo.jpg"
+                                alt=""
+                            />
+                            <p class="eyebrow">Natural language · read-only</p>
+                            <h2>Ask your <em>data</em> anything.</h2>
+                            <p class="lead muted">
+                                Answers come only from tools that read your
+                                database, and every answer names the collections
+                                it used.
+                            </p>
+                            <div class="chips">
+                                <button
+                                    class="chip"
+                                    type="button"
+                                    data-q="Which collections exist, and how many documents does each hold?"
+                                >
+                                    <svg class="icon">
+                                        <use href="#i-table" /></svg
+                                    >Which collections exist?
+                                </button>
+                                <button
+                                    class="chip"
+                                    type="button"
+                                    data-q="What fields does the largest collection contain?"
+                                >
+                                    <svg class="icon">
+                                        <use href="#i-sparkle" /></svg
+                                    >Fields in the largest collection
+                                </button>
+                                <button
+                                    class="chip"
+                                    type="button"
+                                    data-q="Show me the five most recent documents in the largest collection."
+                                >
+                                    <svg class="icon">
+                                        <use href="#i-steps" /></svg
+                                    >Latest documents
+                                </button>
+                            </div>
+                        </section>
+                    </div>
+
+                    <div class="composer-wrap">
+                        <form id="composer" class="composer">
+                            <textarea
+                                id="input"
+                                rows="1"
+                                maxlength="2000"
+                                placeholder="Ask about your data…"
+                            ></textarea>
+                            <div class="composer-bar">
+                                <span class="hint"
+                                    ><kbd>Enter</kbd> send
+                                    <span class="sep">·</span>
+                                    <kbd>Shift</kbd>+<kbd>Enter</kbd> new
+                                    line</span
+                                >
+                                <span class="spacer"></span>
+                                <button
+                                    type="submit"
+                                    id="send"
+                                    class="send-btn"
+                                    aria-label="Send message"
+                                >
+                                    <svg class="icon">
+                                        <use href="#i-send" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </form>
+                        <p id="composer-note" class="note" hidden></p>
+                    </div>
+                </main>
+            </div>
         </div>
-        <nav id="collection-list" aria-label="Collections"></nav>
-        <p id="empty-collections" class="muted" hidden>No collections in this database.</p>
-      </aside>
 
-      <main id="thread" aria-live="polite">
-        <div id="messages">
-          <div class="welcome" id="welcome">
-            <h2>Ask about your data</h2>
-            <p class="muted">Answers come only from tools that read your MongoDB database,
-            and every answer cites the collections it used.</p>
-          </div>
+        <!-- Connection modal -->
+        <div id="modal-backdrop" class="backdrop" hidden>
+            <div
+                id="connect-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="modal-title"
+            >
+                <header class="modal-head">
+                    <div>
+                        <p class="eyebrow">Connection</p>
+                        <h2 id="modal-title">Connect to MongoDB</h2>
+                    </div>
+                    <button
+                        type="button"
+                        id="modal-close"
+                        class="icon-btn-sq"
+                        aria-label="Close"
+                    >
+                        <svg class="icon"><use href="#i-x" /></svg>
+                    </button>
+                </header>
+
+                <form id="connect-form">
+                    <label class="field">
+                        <span class="field-label"
+                            ><svg class="icon"><use href="#i-link" /></svg
+                            >MongoDB URI</span
+                        >
+                        <input
+                            id="f-uri"
+                            type="text"
+                            autocomplete="off"
+                            spellcheck="false"
+                            placeholder="mongodb://localhost:27017"
+                        />
+                    </label>
+                    <label class="field">
+                        <span class="field-label"
+                            ><svg class="icon"><use href="#i-database" /></svg
+                            >Database</span
+                        >
+                        <input
+                            id="f-db"
+                            type="text"
+                            autocomplete="off"
+                            spellcheck="false"
+                        />
+                    </label>
+                    <label class="field">
+                        <span class="field-label"
+                            ><svg class="icon"><use href="#i-key" /></svg>API
+                            key <em class="fine">memory only</em></span
+                        >
+                        <input
+                            id="f-key"
+                            type="password"
+                            autocomplete="off"
+                            placeholder="sk-…"
+                        />
+                    </label>
+                    <label class="field" id="token-label" hidden>
+                        <span class="field-label"
+                            ><svg class="icon"><use href="#i-shield" /></svg
+                            >Access token
+                            <em class="fine">MONGOCHAT_API_TOKEN</em></span
+                        >
+                        <input
+                            id="f-token"
+                            type="password"
+                            autocomplete="off"
+                        />
+                    </label>
+                    <div class="field-row">
+                        <label class="field">
+                            <span class="field-label"
+                                ><svg class="icon"><use href="#i-globe" /></svg
+                                >Base URL</span
+                            >
+                            <input
+                                id="f-base"
+                                type="text"
+                                autocomplete="off"
+                                spellcheck="false"
+                                value="https://api.openai.com/v1"
+                            />
+                        </label>
+                        <label class="field">
+                            <span class="field-label"
+                                ><svg class="icon"><use href="#i-cpu" /></svg
+                                >Model</span
+                            >
+                            <input
+                                id="f-model"
+                                type="text"
+                                autocomplete="off"
+                                spellcheck="false"
+                                value="gpt-4o-mini"
+                            />
+                        </label>
+                    </div>
+                    <p id="server-hint" class="hint-line" hidden></p>
+                    <p id="modal-error" class="error-line" hidden></p>
+                    <div class="modal-actions">
+                        <button
+                            type="button"
+                            id="modal-cancel"
+                            class="btn ghost"
+                            hidden
+                        >
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn primary">
+                            <span class="btn-label">Connect</span>
+                        </button>
+                    </div>
+                </form>
+                <p class="fine center">
+                    Keys are never written to localStorage or cookies.
+                </p>
+            </div>
         </div>
-        <form id="composer">
-          <textarea id="input" rows="1" maxlength="2000"
-            placeholder="Ask a question… (Enter to send, Shift+Enter for a new line)"></textarea>
-          <button type="submit" id="send" class="btn primary">Send</button>
-        </form>
-        <p id="composer-note" class="muted small-note" hidden></p>
-      </main>
-    </div>
-  </div>
 
-  <div id="modal-backdrop" class="backdrop" hidden>
-    <div id="connect-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <h2 id="modal-title">Connect to MongoDB</h2>
-      <form id="connect-form">
-        <label>MongoDB URI
-          <input id="f-uri" type="text" autocomplete="off" spellcheck="false"
-            placeholder="mongodb://localhost:27017" />
-        </label>
-        <label>Database
-          <input id="f-db" type="text" autocomplete="off" spellcheck="false" />
-        </label>
-        <label>API key <span class="muted">(kept in memory only)</span>
-          <input id="f-key" type="password" autocomplete="off" placeholder="sk-…" />
-        </label>
-        <label id="token-label" hidden>Access token
-          <span class="muted">(MONGOCHAT_API_TOKEN)</span>
-          <input id="f-token" type="password" autocomplete="off" />
-        </label>
-        <label>Base URL
-          <input id="f-base" type="text" autocomplete="off" spellcheck="false"
-            value="https://api.openai.com/v1" />
-        </label>
-        <label>Model
-          <input id="f-model" type="text" autocomplete="off" spellcheck="false"
-            value="gpt-4o-mini" />
-        </label>
-        <p id="server-hint" class="muted small-note" hidden></p>
-        <p id="modal-error" class="error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" id="modal-cancel" class="btn" hidden>Cancel</button>
-          <button type="submit" class="btn primary">Connect</button>
+        <div id="drawer-scrim" hidden></div>
+
+        <div id="toast" class="toast" role="status" aria-live="polite">
+            <span id="toast-icon" class="toast-icon"></span>
+            <span id="toast-text"></span>
         </div>
-      </form>
-      <p class="muted small-note">Keys are never written to localStorage or cookies.</p>
-    </div>
-  </div>
 
-  <div id="drawer-scrim" hidden></div>
-  <script src="/static/app.js"></script>
-</body>
+        <script src="/static/app.js"></script>
+    </body>
 </html>
