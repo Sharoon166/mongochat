@@ -59,13 +59,17 @@
       <form id="connect-form">
         <label>MongoDB URI
           <input id="f-uri" type="text" autocomplete="off" spellcheck="false"
-            placeholder="mongodb://localhost:27017" required />
+            placeholder="mongodb://localhost:27017" />
         </label>
         <label>Database
-          <input id="f-db" type="text" autocomplete="off" spellcheck="false" required />
+          <input id="f-db" type="text" autocomplete="off" spellcheck="false" />
         </label>
         <label>API key <span class="muted">(kept in memory only)</span>
           <input id="f-key" type="password" autocomplete="off" placeholder="sk-…" />
+        </label>
+        <label id="token-label" hidden>Access token
+          <span class="muted">(MONGOCHAT_API_TOKEN)</span>
+          <input id="f-token" type="password" autocomplete="off" />
         </label>
         <label>Base URL
           <input id="f-base" type="text" autocomplete="off" spellcheck="false"
@@ -75,6 +79,7 @@
           <input id="f-model" type="text" autocomplete="off" spellcheck="false"
             value="gpt-4o-mini" />
         </label>
+        <p id="server-hint" class="muted small-note" hidden></p>
         <p id="modal-error" class="error" hidden></p>
         <div class="modal-actions">
           <button type="button" id="modal-cancel" class="btn" hidden>Cancel</button>

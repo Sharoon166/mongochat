@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr
 
-from mongochat.config import Config, require_uri_db
+from mongochat.config import Config, redact_uri_safe, require_uri_db
 from mongochat.core.agent import set_debug
 from mongochat.core.session import Session
 from mongochat.types import (
@@ -61,8 +61,9 @@ def _message_for(exc: MongoChatError) -> tuple[str, str]:
 
 
 class SessionRequest(BaseModel):
-    uri: str
-    database: str
+    # Empty means "use the server's configured value" (flag > env > .env).
+    uri: str = ""
+    database: str = ""
     api_key: str | None = None
     base_url: str | None = None
     model: str | None = None
@@ -168,6 +169,25 @@ def create_app(config: Config) -> FastAPI:
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
         return {"status": "ok", "sessions": len(_SESSIONS)}
+
+    @app.get("/api/config")
+    async def server_config() -> dict[str, Any]:
+        """What the server already knows, so the UI can skip re-asking.
+
+        Booleans, the database name, and a credential-stripped URI hint only —
+        no secrets leave the process here.
+        """
+        uri_set = bool(config.mongodb_uri)
+        return {
+            "mongodb_uri_set": uri_set,
+            "uri_hint": redact_uri_safe(config.mongodb_uri) if uri_set else "",
+            "database": config.mongodb_database,
+            "api_key_set": config.openai_api_key is not None,
+            "base_url": config.openai_base_url,
+            "model": config.chat_model,
+            "token_required": config.api_token is not None,
+            "ready": uri_set and bool(config.mongodb_database),
+        }
 
     @app.post("/api/session", dependencies=[Depends(auth)])
     async def create_session(body: SessionRequest) -> dict[str, Any]:
@@ -469,8 +489,12 @@ def _completion(
     }
 
 
-def run_server(config: Config, *, host: str = "127.0.0.1", port: int = 8000) -> None:
-    """Bind the app, warning when it is exposed without a token."""
+def run_server(
+    config: Config, *, host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
+) -> None:
+    """Bind the app, print where it is, and open a browser."""
+    import webbrowser
+
     import uvicorn
 
     if host not in {"127.0.0.1", "localhost", "::1"} and config.api_token is None:
@@ -481,9 +505,43 @@ def run_server(config: Config, *, host: str = "127.0.0.1", port: int = 8000) -> 
         )
         print(
             f"WARNING: --host {host} with no MONGOCHAT_API_TOKEN set. The API is unauthenticated.",
+            flush=True,
         )
     app = create_app(config)
+    url = f"http://{host}:{port}"
+    _print_banner(config, url)
+    if open_browser:
+        print("Opening your browser…", flush=True)
+        try:
+            webbrowser.open(url)
+        except Exception:  # pragma: no cover - depends on the desktop session
+            print(f"Could not open a browser automatically. Visit {url} yourself.", flush=True)
     uvicorn.run(app, host=host, port=port, log_level="debug" if config.debug else "warning")
+
+
+def _print_banner(config: Config, url: str) -> None:
+    """Say out loud what was loaded (and from where), so a silent console never happens."""
+    values = config.redacted()
+    sources = config.source_table()
+    rows = [
+        ("MongoDB URI", "mongodb_uri"),
+        ("Database", "mongodb_database"),
+        ("API key", "openai_api_key"),
+        ("Base URL", "openai_base_url"),
+        ("Model", "chat_model"),
+    ]
+    width = max(len(label) for label, _ in rows)
+    lines = ["mongochat web dashboard", f"  {'URL'.ljust(width)}  {url}"]
+    lines += [
+        f"  {label.ljust(width)}  {values[key]}  [{sources.get(key, 'default')}]"
+        for label, key in rows
+    ]
+    lines.append(f"  {'Docs'.ljust(width)}  {url}/docs")
+    if not config.mongodb_uri or not config.mongodb_database:
+        lines.append("")
+        lines.append("Missing values will be asked for in the connect dialog.")
+    # flush=True: stdout is block-buffered when redirected to a file or pipe.
+    print("\n".join(lines), flush=True)
 
 
 __all__ = ["create_app", "run_server"]

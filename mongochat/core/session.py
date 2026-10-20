@@ -206,4 +206,4 @@ class Session:
         with contextlib.suppress(Exception):
             self.client.close()
         if self.llm is not None:
-            self.llm.close()
+            await self.llm.close()

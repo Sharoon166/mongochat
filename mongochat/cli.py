@@ -570,6 +570,9 @@ def serve(
     model: Annotated[str | None, typer.Option("--model", show_default=False)] = None,
     max_steps: Annotated[int | None, typer.Option("--max-steps")] = None,
     debug: Annotated[bool, typer.Option("--debug")] = False,
+    no_browser: Annotated[
+        bool, typer.Option("--no-browser", help="Do not open a browser.")
+    ] = False,
 ) -> None:
     """Run the web dashboard and the /v1 API."""
     flags = FlagOverrides(
@@ -585,7 +588,7 @@ def serve(
     setup_logging(config.debug)
     from mongochat.server import run_server
 
-    run_server(config, host=host, port=port)
+    run_server(config, host=host, port=port, open_browser=not no_browser)
 
 
 @app.command()

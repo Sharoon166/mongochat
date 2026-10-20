@@ -29,7 +29,9 @@ const state = {
   database: "",
   busy: false,
   // Credentials stay here only.
-  creds: { uri: "", database: "", api_key: "", base_url: "", model: "" },
+  creds: { uri: "", database: "", api_key: "", base_url: "", model: "", token: "" },
+  // What the server already has configured (from /api/config), or null.
+  serverConfig: null,
   pollTimer: null,
 };
 
@@ -58,9 +60,13 @@ async function api(path, options = {}) {
   return payload;
 }
 
+function headersFor(token) {
+  return token ? { Authorization: "Bearer " + token } : {};
+}
+
 function keyHeaders() {
   // The key is sent per request and never persisted.
-  return {};
+  return headersFor(state.creds.token);
 }
 
 function chatBody(message) {
@@ -303,63 +309,101 @@ async function loadSchema() {
 const backdrop = $("#modal-backdrop");
 const modalError = $("#modal-error");
 const connectForm = $("#connect-form");
+const serverHint = $("#server-hint");
 
 function openModal(isFirstLoad) {
+  const cfg = state.serverConfig;
+  const uriProvided = Boolean(cfg && cfg.mongodb_uri_set);
+  const dbProvided = Boolean(cfg && cfg.database);
+  const keyProvided = Boolean(cfg && cfg.api_key_set);
+
   backdrop.hidden = false;
   $("#modal-cancel").hidden = isFirstLoad;
   modalError.hidden = true;
+
+  // Anything the server already has stays optional and says where it comes from.
+  $("#f-uri").required = !uriProvided;
+  $("#f-db").required = !dbProvided;
+  $("#f-uri").placeholder = uriProvided ? cfg.uri_hint : "mongodb://localhost:27017";
+  $("#f-db").placeholder = dbProvided ? cfg.database + " (from server config)" : "";
+  $("#f-key").placeholder = keyProvided ? "using the server's key" : "sk-…";
+  $("#token-label").hidden = !(cfg && cfg.token_required);
+
+  const hints = [];
+  if (uriProvided) hints.push("URI comes from the server config — leave blank to use it.");
+  if (dbProvided) hints.push("Database comes from the server config.");
+  if (keyProvided) hints.push("API key comes from the server config.");
+  serverHint.textContent = hints.join(" ");
+  serverHint.hidden = hints.length === 0;
+
   $("#f-uri").value = state.creds.uri || "";
   $("#f-db").value = state.creds.database || "";
   $("#f-key").value = state.creds.api_key || "";
-  $("#f-base").value = state.creds.base_url || "https://api.openai.com/v1";
-  $("#f-model").value = state.creds.model || "gpt-4o-mini";
+  $("#f-base").value = state.creds.base_url || (cfg && cfg.base_url) || "https://api.openai.com/v1";
+  $("#f-model").value = state.creds.model || (cfg && cfg.model) || "gpt-4o-mini";
+  $("#f-token").value = state.creds.token || "";
 }
 
 function closeModal() {
   backdrop.hidden = true;
 }
 
-connectForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  modalError.hidden = true;
-
-  const creds = {
+function readCreds() {
+  return {
     uri: $("#f-uri").value.trim(),
     database: $("#f-db").value.trim(),
     api_key: $("#f-key").value.trim(),
     base_url: $("#f-base").value.trim(),
     model: $("#f-model").value.trim(),
+    token: $("#f-token").value.trim(),
   };
+}
 
-  try {
-    const data = await api("/api/session", {
-      method: "POST",
+async function createSession(creds) {
+  const data = await api("/api/session", {
+    method: "POST",
+    headers: headersFor(creds.token),
+    body: JSON.stringify({
+      uri: creds.uri,
+      database: creds.database,
+      api_key: creds.api_key || null,
+      base_url: creds.base_url || null,
+      model: creds.model || null,
+    }),
+  });
+
+  if (state.sessionId) {
+    await api("/api/session/" + encodeURIComponent(state.sessionId), {
+      method: "DELETE",
       headers: keyHeaders(),
-      body: JSON.stringify({
-        uri: creds.uri,
-        database: creds.database,
-        api_key: creds.api_key || null,
-        base_url: creds.base_url || null,
-        model: creds.model || null,
-      }),
-    });
+    }).catch(() => {});
+  }
 
-    if (state.sessionId) {
-      await api("/api/session/" + encodeURIComponent(state.sessionId), {
-        method: "DELETE",
-        headers: keyHeaders(),
-      }).catch(() => {});
-    }
+  state.creds = creds;
+  state.sessionId = data.session_id;
+  state.database = data.database;
+  $("#db-badge").textContent = data.database + " · " + (data.collections || []).length + " collections";
+  closeModal();
+  await loadSchema();
+}
 
-    state.creds = creds;
-    state.sessionId = data.session_id;
-    state.database = data.database;
-    $("#db-badge").textContent = data.database + " · " + (data.collections || []).length + " collections";
-    closeModal();
-    await loadSchema();
+connectForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  modalError.hidden = true;
+
+  const creds = readCreds();
+  const submitBtn = connectForm.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Connecting…";
+  try {
+    await createSession(creds);
   } catch (err) {
     modalError.textContent = err.message;
     modalError.hidden = false;
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Connect";
+    input.focus();
   }
 });
 
@@ -519,11 +563,37 @@ $("#drawer-scrim").addEventListener("click", closeDrawer);
 
 (async function boot() {
   try {
-    const health = await api("/api/health");
-    if (health) $("#composer-note").hidden = false;
+    state.serverConfig = await api("/api/config");
+    $("#composer-note").textContent =
+      "Server config: " + state.serverConfig.model + " · " + state.serverConfig.base_url;
+    $("#composer-note").hidden = false;
   } catch (err) {
     /* server unreachable; the modal will surface errors */
+    state.serverConfig = null;
   }
+
+  const cfg = state.serverConfig;
+  if (cfg && cfg.ready && !cfg.token_required) {
+    // Everything needed is configured server-side: connect without asking again.
+    try {
+      await createSession({
+        uri: "",
+        database: "",
+        api_key: "",
+        base_url: cfg.base_url,
+        model: cfg.model,
+        token: "",
+      });
+      input.focus();
+      return;
+    } catch (err) {
+      openModal(true);
+      modalError.textContent = err.message;
+      modalError.hidden = false;
+      return;
+    }
+  }
+
   openModal(true);
   input.focus();
 })();

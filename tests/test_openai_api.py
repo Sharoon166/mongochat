@@ -36,7 +36,7 @@ class StubLLM:
             "content": f"Answer about orders: 2 rows. (orders) [question: {question[:20]}]",
         }
 
-    def close(self) -> None:  # pragma: no cover - parity with LLMClient
+    async def close(self) -> None:  # pragma: no cover - parity with LLMClient
         pass
 
 

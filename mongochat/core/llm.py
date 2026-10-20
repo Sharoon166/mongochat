@@ -16,9 +16,9 @@ from openai import (
     APIConnectionError,
     APIStatusError,
     APITimeoutError,
+    AsyncOpenAI,
     AuthenticationError,
     BadRequestError,
-    OpenAI,
     PermissionDeniedError,
     RateLimitError,
 )
@@ -49,12 +49,12 @@ TOOL_CAPABLE_HINT = (
 
 
 class LLMClient:
-    """Thin, synchronous wrapper around the OpenAI-compatible chat endpoint."""
+    """Thin, asynchronous wrapper around the OpenAI-compatible chat endpoint."""
 
     def __init__(self, config: LLMConfig, *, timeout: float = 120.0, max_retries: int = 2) -> None:
         self.config = config
         api_key = config.api_key.get_secret_value() if config.api_key else "not-set"
-        self._client = OpenAI(
+        self._client = AsyncOpenAI(
             api_key=api_key,
             base_url=config.base_url,
             timeout=timeout,
@@ -213,9 +213,9 @@ class LLMClient:
             f"Model: {self.config.model}."
         )
 
-    def close(self) -> None:
+    async def close(self) -> None:
         with contextlib.suppress(Exception):
-            self._client.close()
+            await self._client.close()
 
     def redacted_summary(self) -> str:
         key = self.config.api_key.get_secret_value() if self.config.api_key else ""
