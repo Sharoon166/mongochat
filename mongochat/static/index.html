@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>mongochat</title>
+<link rel="stylesheet" href="/static/app.css" />
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <button id="drawer-toggle" class="icon-btn" aria-label="Toggle collections" title="Collections">☰</button>
+      <h1>mongochat</h1>
+      <span id="db-badge" class="badge">no connection</span>
+      <span id="typing" class="typing" hidden>
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span id="typing-tool" class="typing-tool"></span>
+      </span>
+      <span class="spacer"></span>
+      <button id="new-session" class="btn">Connect</button>
+    </header>
+
+    <div id="layout">
+      <aside id="sidebar">
+        <div class="side-head">
+          <strong>Collections</strong>
+          <div class="side-actions">
+            <button id="refresh-index" class="btn small">Refresh index</button>
+            <button id="reset-index" class="btn small danger">Reset index</button>
+          </div>
+        </div>
+        <nav id="collection-list" aria-label="Collections"></nav>
+        <p id="empty-collections" class="muted" hidden>No collections in this database.</p>
+      </aside>
+
+      <main id="thread" aria-live="polite">
+        <div id="messages">
+          <div class="welcome" id="welcome">
+            <h2>Ask about your data</h2>
+            <p class="muted">Answers come only from tools that read your MongoDB database,
+            and every answer cites the collections it used.</p>
+          </div>
+        </div>
+        <form id="composer">
+          <textarea id="input" rows="1" maxlength="2000"
+            placeholder="Ask a question… (Enter to send, Shift+Enter for a new line)"></textarea>
+          <button type="submit" id="send" class="btn primary">Send</button>
+        </form>
+        <p id="composer-note" class="muted small-note" hidden></p>
+      </main>
+    </div>
+  </div>
+
+  <div id="modal-backdrop" class="backdrop" hidden>
+    <div id="connect-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h2 id="modal-title">Connect to MongoDB</h2>
+      <form id="connect-form">
+        <label>MongoDB URI
+          <input id="f-uri" type="text" autocomplete="off" spellcheck="false"
+            placeholder="mongodb://localhost:27017" required />
+        </label>
+        <label>Database
+          <input id="f-db" type="text" autocomplete="off" spellcheck="false" required />
+        </label>
+        <label>API key <span class="muted">(kept in memory only)</span>
+          <input id="f-key" type="password" autocomplete="off" placeholder="sk-…" />
+        </label>
+        <label>Base URL
+          <input id="f-base" type="text" autocomplete="off" spellcheck="false"
+            value="https://api.openai.com/v1" />
+        </label>
+        <label>Model
+          <input id="f-model" type="text" autocomplete="off" spellcheck="false"
+            value="gpt-4o-mini" />
+        </label>
+        <p id="modal-error" class="error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" id="modal-cancel" class="btn" hidden>Cancel</button>
+          <button type="submit" class="btn primary">Connect</button>
+        </div>
+      </form>
+      <p class="muted small-note">Keys are never written to localStorage or cookies.</p>
+    </div>
+  </div>
+
+  <div id="drawer-scrim" hidden></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
